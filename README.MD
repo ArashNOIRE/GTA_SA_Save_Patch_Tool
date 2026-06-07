@@ -61,10 +61,18 @@ lua app.lua c/uc/auto input.b output.b
 
 ---
 
+
 ## 🛠 Requirements
 
 - Lua 5.1+ (or compatible interpreter)
 - No external dependencies
+
+---
+
+## Credits & Acknowledgements
+
+- Special thanks to **gothi** for their work on **GTACensorRemover**, which provided valuable insights into GTA San Andreas save file structure and helped identify gameplay-related flags such as the Hot Coffee state.
+- This project builds upon those observations to provide a Lua-based save patching tool with automatic checksum correction and version validation.
 
 ---
 
