@@ -132,7 +132,19 @@ if not changed then
     return
 end
 
+-- write everything we need in a file
 writeChecksum(bytes)
 saveFile(outputFile, bytes)
 
+-- print the result
+print(string.format(
+    "Offset 0x1462 (Hotcoffee flag) changed from 0x%02X to 0x%02X",
+    flag,
+    bytes[OFF_FLAG]
+))
+print(string.format(
+    "Offset 0x317FC changed from 0x%02X to 0x%02X",
+    cs,
+    bytes[OFF_CS]
+))
 print("Done:", inputFile, "----->", outputFile)
