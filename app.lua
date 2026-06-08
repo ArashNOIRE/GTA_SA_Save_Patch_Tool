@@ -172,5 +172,3 @@ print(string.format(
     bytes[OFF_CS]
 ))
 print("Done:", inputFile, "----->", outputFile)
-
--- TODO : Add better comments
