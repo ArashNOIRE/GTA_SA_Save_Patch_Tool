@@ -69,10 +69,19 @@ lua app.lua c/uc/auto input.b output.b
 
 ---
 
-## Credits & Acknowledgements
+# Acknowledgements
 
-- Special thanks to **gothi** for their work on **GTACensorRemover**, which provided valuable insights into GTA San Andreas save file structure and helped identify gameplay-related flags such as the Hot Coffee state.
-- This project builds upon those observations to provide a Lua-based save patching tool with automatic checksum correction and version validation.
+This project would not have been possible without the work of many members of the GTA modding and reverse-engineering community.
+
+Special thanks to:
+
+- gothi — Research on the GTA San Andreas censorship flag and GTACensorRemover.
+- GTA Modding Wiki contributors — Documentation of save structure, version IDs, checksums, and many internal game systems.
+- Junior_Djjr — CLEO implementation demonstrating the use of GF_Censore_Flag.
+- Sanny Builder & SBL contributors — Script disassembly/decompilation tools and symbol database.
+- OrionSR — Save format documentation, reverse-engineering resources and documentation of official global variable names.
+- GTASnP — Save editing research and documentation of version differences and save glitches.
+- Everyone in the GTA modding community who spent years documenting the internals of GTA San Andreas.
 
 ---
 
