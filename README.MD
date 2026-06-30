@@ -1,91 +1,81 @@
 # GTA San Andreas Save Patch Tool
 
-A lightweight Lua-based tool for modifying GTA San Andreas save files (PS2 / PC versions).
+A lightweight, modular Lua-based tool for modifying GTA San Andreas save files across multiple platforms (PC, PS2, and Xbox).
 
-This tool allows toggling censorship-related flags inside save files and automatically fixes checksum after modifications.
+This tool allows toggling censorship-related flags inside save files, fixes internal game checksums, and automatically re-signs Xbox digital signatures without needing external cryptographic applications.
 
 ---
 
 ## ⚙️ Features
 
-- Toggle censored / uncensored save state
-- Auto-detect current state
-- Automatic checksum recalculation
-- Version validation (prevents unsupported saves)
-- Simple CLI interface
+- **Toggle Censorship State:** Switch between censored (C) and uncensored (UC) save states.
+- **Auto-Detect:** Automatically read and toggle the current state using the `auto` mode.
+- **Multi-Platform Core:** Unified engine that handles offset shifts dynamically.
+- **Internal Checksum Recalculation:** Automatically recalculates the game's internal 32-bit checksum to prevent "Corrupted Save File" errors.
+- **Automated Xbox Resigning:** Built-in cryptographic module that automatically calculates and overwrites the mandatory 20-byte original Xbox security header using `HMAC-SHA1` (eliminating the need for third-party tools like XSavSig).
+- **Structure Validation:** Strict verification of version IDs and "BLOCK" headers to safe-guard against file corruption.
 
 ---
 
 ## 📦 Supported Versions
 
-- GTA San Andreas PC 1.0 (Retail)
-- GTA San Andreas PS2 1.03 (Original Black Label / AO-rated version)
+- **GTA San Andreas PC 1.0** (Retail / Hoodlum)
+- **GTA San Andreas PS2 1.03** (Original Black Label / AO-rated version)
+- **GTA San Andreas Original Xbox v1** (Original release - Fully Supported with auto-signing)
 
-- ⚠️ Xbox versions (Original release and Revision 1) are NOT tested and compatibility is unknown.
-- ⚠️ Other PC and console versions (PS2 2.01, 3.00, and later releases) are not supported and are likely incompatible due to save format and script changes.
+> ⚠️ **Incompatibility Warning:** Other versions (such as XBox Rev1 ,PC v1.1/v2.0, PS2 v2.01/3.00, HD Remasters, or the Definitive Edition) are NOT supported due to fundamental structural changes in their save formats and global variable allocations.
 
 ---
 
 ## 🚀 Usage
 
+Run the main orchestration script via the terminal by passing the operational mode, input path, and output path:
+
 ```bash
-lua app.lua c/uc/auto input.b output.b
+lua app.lua [mode] [input_file] [output_file]
 ```
 
----
-
 ## Modes
+- c    → Force censored state (Enable censorship / Lock Hot Coffee content)
 
-- ```c``` → Force censored state
-- ```uc``` → Force uncensored state
-- ```auto``` → Automatically toggle current state
+- uc   → Force uncensored state (Disable censorship / Unlock Hot Coffee content)
 
----
+- auto → Dynamically toggle the current state based on current file flags
 
-## ⚠️ Warnings
+## 🛠 Project Structure & Requirements
+- Lua 5.1+ (or a compatible environment like LuaJIT)
+- No external dependencies (Runs entirely on pure mathematical emulation)
 
-- Only use with supported versions listed above
-- Always backup your original save before using this tool
-- Incorrect usage may corrupt save files
-- This tool directly modifies binary save data
-- Use at your own risk
+## File Architecture
+- app.lua — The primary controller file handling argument parsing, platform detection, block-offset management, and flag toggling.
 
----
+- crypto.lua — A standalone mathematical cryptography module implementing pure Lua versions of bitwise fallbacks, SHA-1, and HMAC-SHA1 hashing algorithms.
 
-## 🧠 Technical Notes
+**Note: Ensure ``crypto.lua`` resides in the exact same directory directory as ``app.lua`` so it can be resolved via require("crypto").**
 
-- Save structure starts with "BLOCK" header
-- Version ID is stored after the header (4 bytes)
-- Censorship flag is located at a fixed offset inside the save
-- Checksum is a 32-bit unsigned sum of all bytes except the last 4
+## ⚠️ Warnings & Safety
+1. Always backup your original save data before executing the tool.
 
----
+2. This utility directly overrides raw binary contexts; incorrect parameters or modified headers can lead to data unreadability.
 
+3. Use at your own risk.
 
-## 🛠 Requirements
-
-- Lua 5.1+ (or compatible interpreter)
-- No external dependencies
-
----
-
-# Acknowledgements
-
+## Acknowledgements
 This project would not have been possible without the work of many members of the GTA modding and reverse-engineering community.
 
-Special thanks to:
+**Special thanks to:**
 
-- gothi — Research on the GTA San Andreas censorship flag and GTACensorRemover.
-- GTA Modding Wiki contributors — Documentation of save structure, version IDs, checksums, and many internal game systems.
-- Junior_Djjr — CLEO implementation demonstrating the use of GF_Censore_Flag.
-- Sanny Builder & SBL contributors — Script disassembly/decompilation tools and symbol database.
-- OrionSR — Save format documentation, reverse-engineering resources and documentation of official global variable names.
-- GTASnP — Save editing research and documentation of version differences and save glitches.
-- Everyone in the GTA modding community who spent years documenting the internals of GTA San Andreas.
+*gothi* — Research on the GTA San Andreas censorship flag and GTACensorRemover.
 
----
+*GTA Modding Wiki contributors* — Comprehensive documentation of save structures, byte boundaries, and hashing guidelines.
+
+*Junior_Djjr* — CLEO runtime implementation demonstrating scripts mapping to $GF_Censore_Flag.
+
+*Sanny Builder Team* — Script disassembly/decompilation suites and symbol databases.
+
+*OrionSR* — Detailed layout documentation of official global variable structures.
+
+*XSavSig Developers / Database Maintainers* — For cataloging the Xbox SigKey registries which allowed bypassing external dependency pipelines.
 
 ## 📜 License
-
-* This project is provided as-is for educational and modding purposes.
-Use at your own risk.
+This project is provided as-is for educational, preservation, and modding research purposes.

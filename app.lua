@@ -1,174 +1,152 @@
--- Command-line arguments:
--- mode       = c / uc / auto
--- inputFile  = source save file
--- outputFile = patched save file
-local mode = arg[1]
-local inputFile = arg[2]
-local outputFile = arg[3]
+-- app.lua
+-- Main orchestration tool for patching GTA San Andreas save files.
+-- Supports PC 1.0, PS2 1.03, and automatically signs Original Xbox v1 saves.
 
--- Validate user input before doing anything.
--- Exit immediately if arguments are missing or invalid.
+-- Import the cryptographic module for Xbox HMAC-SHA1 signing
+local crypto = require("crypto")
+
+-- Capture command-line execution arguments
+local mode, inputFile, outputFile = arg[1], arg[2], arg[3]
+
+-- Validate terminal parameters and present instructions if requirements aren't met
 if not inputFile or not outputFile or (mode ~= "c" and mode ~= "uc" and mode ~= "auto") then
-    print([[
-GTA SA Save Patch Tool
-
-Usage:
-  lua patch.lua c/uc/auto input.b output.b
-
-Modes:
-  c     -> force censored state
-  uc    -> force uncensored state
-  auto  -> toggle current state
-
-Warnings:
-  - Only tested on GTA San Andreas PC 1.0 (Retail) and PS2 1.03 (Original Black Label / AO-rated version)
-  - Not tested on Xbox version (Original release and Revision 1)
-  - Compatibility with other versions is not guaranteed and may result in save corruption
-  - Always keep a backup of your original save
-  - Wrong usage may corrupt save file
-]])
+    print("GTA SA Save Patch Tool (PC / PS2 / XBOX v1)\n\nUsage:\n  lua app.lua c/uc/auto input.b output.b")
     os.exit(1)
 end
 
--- Load an entire save file into memory and return it as a byte array.
--- GTA SA save files are small enough that loading them all at once is fine.
+-- Reads an entire binary file into a 1-indexed Lua byte array table
 local function loadFile(path)
     local f = io.open(path, "rb")
     if not f then error("Cannot open: " .. path) end
     local data = f:read("*all")
     f:close()
-    if #data == 0 then error("Empty file") end
     return { data:byte(1, #data) }
 end
 
--- Write a byte array back to disk.
--- Each table entry must contain a value between 0 and 255.
+-- Writes a 1-indexed Lua byte array table back to disk as a binary stream
 local function saveFile(path, bytes)
-    if not bytes then
-        error("bytes is nil")
-    end
-
     local f = io.open(path, "wb")
-    if not f then
-        error("Cannot open file for writing: " .. path)
-    end
-
-    for i = 1, #bytes do
-        local b = bytes[i]
-        if not b then
-            error("Nil byte at index " .. i)
-        end
-        f:write(string.char(b))
-    end
-
+    if not f then error("Cannot open file for writing: " .. path) end
+    for i = 1, #bytes do f:write(string.char(bytes[i])) end
     f:close()
 end
 
--- GTA SA stores a 32-bit checksum at the end of the save.
--- The checksum is calculated by summing every byte before it.
-local function calculateChecksum(bytes)
+-- Calculates the 32-bit unsigned checksum of the save payload data
+local function calculateChecksum(bytes, config, baseOffset)
     local sum = 0
-    for i = 1, 0x317FC do
-        sum = (sum + bytes[i]) % 0x100000000
+    -- Compute sum strictly over the configured block size, honoring the base offset
+    for i = baseOffset + 1, baseOffset + config.csSize do
+        sum = (sum + bytes[i]) % 0x100000000 -- Mimic 32-bit integer overflow wrapping
     end
     return sum
 end
 
--- Recalculate the checksum and write it to the last four bytes
--- of the save file in little-endian format.
-local function writeChecksum(bytes)
-    local sum = calculateChecksum(bytes)
-
-    bytes[0x317FD] = sum % 256
-    bytes[0x317FE] = math.floor(sum / 256) % 256
-    bytes[0x317FF] = math.floor(sum / 65536) % 256
-    bytes[0x31800] = math.floor(sum / 16777216) % 256
+-- Overwrites the 4-byte little-endian checksum entry at the end of the save block
+local function writeChecksum(bytes, config, baseOffset)
+    local sum = calculateChecksum(bytes, config, baseOffset)
+    local csIndex = baseOffset + config.csSize + 1
+    
+    -- Deconstruct the 32-bit summation value into 4 distinct little-endian bytes
+    bytes[csIndex]     = sum % 256
+    bytes[csIndex + 1] = math.floor(sum / 256) % 256
+    bytes[csIndex + 2] = math.floor(sum / 65536) % 256
+    bytes[csIndex + 3] = math.floor(sum / 16777216) % 256
 end
 
--- Read the entire save file once.
--- All modifications are performed in memory before writing.
+-- Recalculates and signs the 20-byte Xbox dashboard integrity block
+local function resignXboxSignature(bytes)
+    -- Step 1: Extract the mutable game save data context (everything from byte 21 onwards)
+    local dataBuffer = {}
+    for i = 21, #bytes do 
+        table.insert(dataBuffer, string.char(bytes[i])) 
+    end
+    local message = table.concat(dataBuffer)
+
+    -- Step 2: Convert the unique GTA San Andreas Xbox Signature Key from Hex to Binary
+    local hexKey = "E3455E30DB1AEDC5A5CC787CDE5DAACE"
+    local keyBuffer = {}
+    for i = 1, #hexKey, 2 do
+        table.insert(keyBuffer, string.char(tonumber(hexKey:sub(i, i+1), 16)))
+    end
+    local key = table.concat(keyBuffer)
+
+    -- Step 3: Run the extracted save contents through the HMAC-SHA1 core module
+    local signature = crypto.hmac_sha1(key, message)
+
+    -- Step 4: Write the newly calculated 20-byte token into the front of the save array
+    for i = 1, 20 do
+        bytes[i] = signature:byte(i)
+    end
+    print("🔒 Xbox 20-byte digital signature successfully recalculated!")
+end
+
+-- Execute processing sequence
 local bytes = loadFile(inputFile)
 
--- Every GTA SA save begins with the ASCII string "BLOCK".
--- Reject files that do not match this signature.
-if string.char(bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]) ~= "BLOCK" then
-    error("Invalid save file")
+-- 1. Scan for the structural "BLOCK" magic sequence to establish file alignment
+local baseOffset = 0
+if string.char(bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]) == "BLOCK" then
+    baseOffset = 0 -- Standard alignment (PC/PS2)
+elseif string.char(bytes[21], bytes[22], bytes[23], bytes[24], bytes[25]) == "BLOCK" then
+    baseOffset = 20 -- Xbox signature alignment shift
+else
+    error("Invalid save file: 'BLOCK' magic number not found.")
 end
 
--- Read the Version ID stored in Block 0.
--- This is used to prevent patching unsupported game versions.
+-- 2. Extract the unique 4-byte Version Identification Signature
 local versionId = string.format("%02X %02X %02X %02X",
-    bytes[6], bytes[7], bytes[8], bytes[9]
+    bytes[baseOffset + 6], bytes[baseOffset + 7], bytes[baseOffset + 8], bytes[baseOffset + 9]
 )
 
--- Known Version IDs that are currently supported by this tool.
--- Other versions may use different save structures or may not contain the required Hot Coffee game code.
-local SUPPORTED = {
-    ["75 81 DA 35"] = "PC 1.0",
-    ["4C DC 1D 64"] = "PS2 1.03"
+-- 3. Match against the system offsets registry
+local SUPPORTED_PLATFORMS = {
+    ["0:75 81 DA 35"]  = { name = "PC 1.0",   flagOffset = 0x1452, csSize = 0x317FC },
+    ["0:4C DC 1D 64"]  = { name = "PS2 1.03", flagOffset = 0x1462, csSize = 0x317FC },
+    ["20:4C DC 1D 64"] = { name = "Xbox v1",  flagOffset = 0x148E, csSize = 0x317FC }
 }
 
-if not SUPPORTED[versionId] then
-    error("Unsupported version: " .. versionId)
+local configKey = baseOffset .. ":" .. versionId
+local currentPlatform = SUPPORTED_PLATFORMS[configKey]
+
+if not currentPlatform then
+    error(string.format("Unsupported save or version. ID: %s", versionId))
 end
 
--- Offsets used by this tool.
--- Lua arrays start at 1, therefore +1 is required.
-local OFF_FLAG = 0x1462 + 1 --> Hotcoffee flag
-local OFF_CS   = 0x317FC + 1 --> Checksum
+print("Detected Platform: " .. currentPlatform.name)
 
--- Read current values before making any modifications.
--- These values are kept for logging purposes.
+-- Read the initial status of the censorship flag variable
+local OFF_FLAG = currentPlatform.flagOffset + 1
 local flag = bytes[OFF_FLAG]
-local cs   = bytes[OFF_CS]
 
-print(string.format("Flag: %02X", flag))
-print(string.format("CS: %02X", cs))
-
--- Auto mode flips the current state:
--- 00 -> censored
--- 01 -> uncensored
+-- 4. Apply State Toggle Constraints
 local target = mode
-if mode == "auto" then
-    target = (flag == 0x00) and "c" or "uc"
+if mode == "auto" then 
+    target = (flag == 0x00) and "uc" or "c" 
 end
 
--- Track whether a modification was actually performed.
--- This prevents unnecessary file creation.
 local changed = false
-
--- Apply requested patch.
--- Only patch when the save is not already in the desired state.
-if target == "uc" and flag == 0x01 then
-    bytes[OFF_FLAG] = 0x00
-    bytes[OFF_CS] = (cs - 1) % 256
+if target == "uc" and flag == 0x00 then 
+    bytes[OFF_FLAG] = 0x01 
     changed = true
-
-elseif target == "c" and flag == 0x00 then
-    bytes[OFF_FLAG] = 0x01
-    bytes[OFF_CS] = (cs + 1) % 256
-    changed = true
+elseif target == "c" and flag == 0x01 then 
+    bytes[OFF_FLAG] = 0x00 
+    changed = true 
 end
 
--- Nothing changed, so there is no reason to create a new file.
+-- Exit immediately if the file is already in the targeted configuration state
 if not changed then
-    print("No patch needed")
+    print("Save is already in target state. No patch needed.")
     return
 end
 
--- Rebuild checksum and write the modified save to disk.
-writeChecksum(bytes)
-saveFile(outputFile, bytes)
+-- Fix the internal GTA standard 32-bit checksum
+writeChecksum(bytes, currentPlatform, baseOffset)
 
--- Show exactly what changed for debugging and verification.
-print(string.format(
-    "Offset 0x1462 (Hotcoffee flag) changed from 0x%02X to 0x%02X",
-    flag,
-    bytes[OFF_FLAG]
-))
-print(string.format(
-    "Offset 0x317FC changed from 0x%02X to 0x%02X",
-    cs,
-    bytes[OFF_CS]
-))
-print("Done:", inputFile, "----->", outputFile)
+-- If processing an Xbox layout structure, intercept and calculate the HMAC security wrapper
+if baseOffset == 20 then
+    resignXboxSignature(bytes)
+end
+
+-- Write modifications to disk
+saveFile(outputFile, bytes)
+print("Done -> " .. outputFile)
